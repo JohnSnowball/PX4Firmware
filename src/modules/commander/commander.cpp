@@ -171,7 +171,9 @@ static uint64_t last_print_mode_reject_time = 0;
 
 static systemlib::Hysteresis auto_disarm_hysteresis(false);
 
-static float eph_threshold = 5.0f;
+//5.0 太大，实际中超过3.0就已经很难很好定位了
+//static float eph_threshold = 5.0f;
+static float eph_threshold = 3.0f;
 static float epv_threshold = 10.0f;
 
 static struct vehicle_status_s status = {};
@@ -1977,7 +1979,9 @@ int commander_thread_main(int argc, char *argv[])
 		bool local_eph_good;
 
 		if (status_flags.condition_local_position_valid) {
-			if (local_position.eph > eph_threshold * 2.5f) {
+//			if (local_position.eph > eph_threshold * 2.5f) {
+//			2.5倍 也太大
+			if (local_position.eph > eph_threshold * 1.2f) {
 				local_eph_good = false;
 
 			} else {
@@ -3416,8 +3420,8 @@ set_control_mode()
 		control_mode.flag_control_rattitude_enabled = false;
 		control_mode.flag_control_altitude_enabled = true;
 		control_mode.flag_control_climb_rate_enabled = true;
-		control_mode.flag_control_position_enabled = !status.in_transition_mode;
-		control_mode.flag_control_velocity_enabled = !status.in_transition_mode;
+		control_mode.flag_control_position_enabled = !status.in_transition_mode && status_flags.condition_local_altitude_valid;
+		control_mode.flag_control_velocity_enabled = !status.in_transition_mode && status_flags.condition_local_altitude_valid;
 		control_mode.flag_control_acceleration_enabled = false;
 		control_mode.flag_control_termination_enabled = false;
 		break;
