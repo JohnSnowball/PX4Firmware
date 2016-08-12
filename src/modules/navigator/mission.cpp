@@ -169,7 +169,9 @@ Mission::on_activation()
 {
 	set_mission_items();
 }
-
+//on_activation为第一次激活mission
+//on_active为激活之后的正常进程
+//两个函数都在navigator中的run()函数调用激活
 void
 Mission::on_active()
 {
