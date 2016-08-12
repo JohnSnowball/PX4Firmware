@@ -169,7 +169,7 @@ Mission::on_activation()
 {
 	set_mission_items();
 }
-//on_activation为第一次激活mission
+//on_activation为第一次激活mission调用的函数
 //on_active为激活之后的正常进程
 //两个函数都在navigator中的run()函数调用激活
 void
@@ -365,7 +365,7 @@ Mission::get_absolute_altitude_for_item(struct mission_item_s &mission_item)
 }
 
 void
-Mission::set_mission_items()
+Mission::set_mission_items()//第一次进入的时候激活，之后也会被调用
 {
 	/* make sure param is up to date */
 	updateParams();
@@ -382,15 +382,18 @@ Mission::set_mission_items()
 	struct mission_item_s mission_item_next_position;
 	bool has_next_position_item = false;
 
-	work_item_type new_work_item_type = WORK_ITEM_TYPE_DEFAULT;
+	work_item_type new_work_item_type = WORK_ITEM_TYPE_DEFAULT;//此处置为default item
 
 	/* copy information about the previous mission item */
+	//如果任务点包含位置信息（非转换点，迟滞点，跳转点。。）
+	//mission_item是在之后的prepare_mission_items()函数设置的
 	if (item_contains_position(&_mission_item) && pos_sp_triplet->current.valid) {
 		/* Copy previous mission item altitude */
 		_mission_item_previous_alt = get_absolute_altitude_for_item(_mission_item);
 	}
 
 	/* try setting onboard mission item */
+	//检查是否为on_board_mission
 	if (_param_onboard_enabled.get()
 	    && prepare_mission_items(true, &_mission_item, &mission_item_next_position, &has_next_position_item)) {
 
@@ -477,6 +480,7 @@ Mission::set_mission_items()
 	if (item_contains_position(&_mission_item)) {
 
 		/* force vtol land */
+		//此处为将vtol机型的land指令强制转换为vtol_land指令，即先切换到旋翼再降落
 		if (_mission_item.nav_cmd == NAV_CMD_LAND && _navigator->get_vstatus()->is_vtol
 		    && _param_force_vtol.get() && !_navigator->get_vstatus()->is_rotary_wing) {
 
@@ -484,9 +488,19 @@ Mission::set_mission_items()
 		}
 
 		/* we have a new position item so set previous position setpoint to current */
+		//将current sp赋值到previous sp
 		set_previous_pos_setpoint();
 
+		/****************************************************************************/
+		/*此处开始即根据当前飞机的状态（起飞/着陆）即起飞/着陆的航点类型来对 mission item做一系列的设定*/
+		/****************************************************************************/
+
 		/* do takeoff before going to setpoint if needed and not already in takeoff */
+		//飞机在地面/未起飞至预设高度时进入判定
+		//此判定仅对take_off/wp/loiter/vtol-takeoff有效，
+		//例：第一点为wp,那么先将wp设置为next mission item然后再原地起飞至wp的高度
+		//new_work_item_type = WORK_ITEM_TYPE_TAKEOFF 这个是为之后的航点模式做准备
+		//若第一点为takeoff，因为_work_item_type初始值为WORK_ITEM_TYPE_DEFAULT，也会进入此判定
 		if (do_need_takeoff() && _work_item_type != WORK_ITEM_TYPE_TAKEOFF) {
 
 			new_work_item_type = WORK_ITEM_TYPE_TAKEOFF;
@@ -513,13 +527,17 @@ Mission::set_mission_items()
 		}
 
 		/* if we just did a takeoff navigate to the actual waypoint now */
+		
+	/*	若起飞完成，进入此判定
+		new_work_item_type = WORK_ITEM_TYPE_DEFAULT;
+		_mission_item.nav_cmd = NAV_CMD_WAYPOINT;	*/
 		if (_work_item_type == WORK_ITEM_TYPE_TAKEOFF) {
 
 			if (_mission_item.nav_cmd == NAV_CMD_VTOL_TAKEOFF
 			    && _navigator->get_vstatus()->is_rotary_wing
 			    && !_navigator->get_land_detected()->landed
 			    && has_next_position_item) {
-
+				//针对vtol_takeoff的设定
 				/* check if the vtol_takeoff command is on top of us */
 				if (do_need_move_to_takeoff()) {
 					new_work_item_type = WORK_ITEM_TYPE_TRANSITON_AFTER_TAKEOFF;
@@ -534,6 +552,7 @@ Mission::set_mission_items()
 				_mission_item.yaw = _navigator->get_global_position()->yaw;
 
 			} else {
+				//普通起飞后，进入此处，将工作模式置为default，航点模式置为wp
 				new_work_item_type = WORK_ITEM_TYPE_DEFAULT;
 				_mission_item.nav_cmd = NAV_CMD_WAYPOINT;
 				/* ignore yaw here, otherwise it might yaw before heading_sp_update takes over */
@@ -587,6 +606,7 @@ Mission::set_mission_items()
 		}
 
 		/* move to landing waypoint before descent if necessary */
+		//针对land点
 		if (do_need_move_to_land() &&
 		    (_work_item_type == WORK_ITEM_TYPE_DEFAULT ||
 		     _work_item_type == WORK_ITEM_TYPE_MOVE_TO_LAND_AFTER_TRANSITION)) {
@@ -632,7 +652,7 @@ Mission::set_mission_items()
 		/* handle non-position mission items such as commands */
 
 	} else {
-
+		//此处的else条件为航点不包含位置信息，即transition,jump,delay等点
 		/* turn towards next waypoint before MC to FW transition */
 		if (_mission_item.nav_cmd == NAV_CMD_DO_VTOL_TRANSITION
 		    && _work_item_type != WORK_ITEM_TYPE_ALIGN
@@ -651,14 +671,22 @@ Mission::set_mission_items()
 
 	}
 
+
+	/****************************************************************************/
+	/*上一步对mission item做一系列的设定完了之后，进入到这里*/
+	/****************************************************************************/
 	/*********************************** set setpoints and check next *********************************************/
 
-	/* set current position setpoint from mission item (is protected against non-position items) */
+	/* set current position setpoint from mission item (is protected against non-position items) 
+	将mission item的值赋给 current setpoint*/
 	mission_item_to_position_setpoint(&_mission_item, &pos_sp_triplet->current);
 
 	/* issue command if ready (will do nothing for position mission items) */
 	issue_command(&_mission_item);
 
+	//work_item_type这个变量负责衔接飞机航点的状态
+	//例如起飞后 new_work_item_type = WORK_ITEM_TYPE_TAKEOFF
+	//那么下一次循环中将会进入if (_work_item_type == WORK_ITEM_TYPE_TAKEOFF)的判定
 	/* set current work item type */
 	_work_item_type = new_work_item_type;
 
@@ -707,7 +735,7 @@ Mission::set_mission_items()
 
 	_navigator->set_position_setpoint_triplet_updated();
 }
-
+//如果在旋翼模式，且land = true或高度小于预设高度，且当前航点类型为wp/loiter/takeoff/vtoltakeoff，返回true，否则为false
 bool
 Mission::do_need_takeoff()
 {
@@ -1011,19 +1039,23 @@ Mission::do_abort_landing()
 	// TODO: reset index to MAV_CMD_DO_LAND_START
 	_current_offboard_mission_index -= 1;
 }
-
+//prepare函数用来从sd卡中读取航点，current以及next，其中next必定为包含位置信息的点，transition/delay等无法作为next点
 bool
 Mission::prepare_mission_items(bool onboard, struct mission_item_s *mission_item,
 			       struct mission_item_s *next_position_mission_item, bool *has_next_position_item)
 {
 	bool first_res = false;
 	int offset = 1;
-
+	//此函数负责从sd卡中读取任务点，一次读一个，读任务点的序号由offset决定
+	//只要能够读取到一个航点，这个函数就能返回true
 	if (read_mission_item(onboard, 0, mission_item)) {
 
 		first_res = true;
 
 		/* trying to find next position mission item */
+		//例：第一点为takeoff点，offset=0读取，随后出现wp,offset=1,直接break到函数结尾
+		//若next点为trasition/delay等，无位置信息，那么offset++，直到读取到的下一个航点包含位置信息
+		//可以认为，只有当next点包含位置信息的时候，才停止读取航点
 		while (read_mission_item(onboard, offset, next_position_mission_item)) {
 
 			if (item_contains_position(next_position_mission_item)) {
@@ -1131,7 +1163,7 @@ Mission::read_mission_item(bool onboard, int offset, struct mission_item_s *miss
 		} else {
 			/* if it's not a DO_JUMP, then we were successful */
 			memcpy(mission_item, &mission_item_tmp, sizeof(struct mission_item_s));
-			return true;
+			return true;//直接跳出循环且终止函数
 		}
 	}
 

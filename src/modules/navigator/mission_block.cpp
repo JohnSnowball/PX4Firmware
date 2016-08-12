@@ -411,7 +411,9 @@ MissionBlock::item_contains_position(const struct mission_item_s *item)
 
 	return true;
 }
-
+/* 
+非vtol_transition模式下，将mission item的值赋给current setpoint相应的值
+在vtol_transition下，将当前的高度值赋给current setpoint的高度值 */
 void
 MissionBlock::mission_item_to_position_setpoint(const struct mission_item_s *item, struct position_setpoint_s *sp)
 {
