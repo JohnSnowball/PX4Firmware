@@ -363,9 +363,9 @@ Mission::get_absolute_altitude_for_item(struct mission_item_s &mission_item)
 		return _mission_item.altitude;
 	}
 }
-
+//从sd卡中读取航点信息到mission item，再根据不同的飞机状态，航点类型，设置position setpoint, previous/current/next
 void
-Mission::set_mission_items()//第一次进入的时候激活，之后也会被调用
+Mission::set_mission_items()
 {
 	/* make sure param is up to date */
 	updateParams();
@@ -698,6 +698,7 @@ Mission::set_mission_items()//第一次进入的时候激活，之后也会被调用
 	}
 
 	_navigator->set_can_loiter_at_sp(false);
+	//此函数设置mission item not reached
 	reset_mission_item_reached();
 
 	if (_mission_type == MISSION_TYPE_OFFBOARD) {
@@ -705,12 +706,13 @@ Mission::set_mission_items()//第一次进入的时候激活，之后也会被调用
 	}
 
 	// TODO: report onboard mission item somehow
-
+	//没有悬停，没有迟滞，没有盘旋，直接进入到下一个航点的设定
 	if (_mission_item.autocontinue && _mission_item.time_inside <= 0.001f) {
 		/* try to process next mission item */
 
 		if (has_next_position_item) {
 			/* got next mission item, update setpoint triplet */
+			//根据mission item next更新next sp的信息
 			mission_item_to_position_setpoint(&mission_item_next_position, &pos_sp_triplet->next);
 
 		} else {
@@ -720,6 +722,7 @@ Mission::set_mission_items()//第一次进入的时候激活，之后也会被调用
 
 	} else {
 		/* vehicle will be paused on current waypoint, don't set next item */
+		//如果有迟滞/悬停/盘旋等，则先不更新next sp的信息
 		pos_sp_triplet->next.valid = false;
 	}
 
@@ -733,7 +736,7 @@ Mission::set_mission_items()//第一次进入的时候激活，之后也会被调用
 						     pos_sp_triplet->previous.lon);
 	}
 
-	_navigator->set_position_setpoint_triplet_updated();
+	_navigator->set_position_setpoint_triplet_updated();//返回_pos_sp_triplet_updated = true;
 }
 //如果在旋翼模式，且land = true或高度小于预设高度，且当前航点类型为wp/loiter/takeoff/vtoltakeoff，返回true，否则为false
 bool
