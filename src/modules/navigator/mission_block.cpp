@@ -86,7 +86,8 @@ MissionBlock::MissionBlock(Navigator *navigator, const char *name) :
 MissionBlock::~MissionBlock()
 {
 }
-
+//先处理非导航点，例如vtol_transition，会在开始转换后等待0.5s，再判断状态是否转换完成，转换完成直接return true
+//若为NAV_CMD_DEFALUT，则直接跳过开头switch
 bool
 MissionBlock::is_mission_item_reached()
 {
@@ -145,9 +146,10 @@ MissionBlock::is_mission_item_reached()
 	}
 
 	hrt_abstime now = hrt_absolute_time();
-
+	//此判断针对takeoff,loiter以及normal wp判断是否到达指定位置，
+	//如果在acceptance radius之内，那么令 waypoint_position_reached = true，进入下一步航向判断
 	if ((_navigator->get_land_detected()->landed == false)
-		&& !_waypoint_position_reached) {
+		&& !_waypoint_position_reached) {//_waypoint_position_reached初始值为false
 
 		float dist = -1.0f;
 		float dist_xy = -1.0f;
@@ -166,6 +168,7 @@ MissionBlock::is_mission_item_reached()
 		if ((_mission_item.nav_cmd == NAV_CMD_TAKEOFF || _mission_item.nav_cmd == NAV_CMD_VTOL_TAKEOFF)
 			&& _navigator->get_vstatus()->is_rotary_wing) {
 			/* require only altitude for takeoff for multicopter, do not use waypoint acceptance radius */
+			//对于旋翼状态，起飞只判定高度有没有超过预设值，超过即认为达到了
 			if (_navigator->get_global_position()->alt >= altitude_amsl) {
 				_waypoint_position_reached = true;
 			}
@@ -183,6 +186,7 @@ MissionBlock::is_mission_item_reached()
 			 * through the waypoint center.
 			 * Therefore the item is marked as reached once the system reaches the loiter
 			 * radius (+ some margin). Time inside and turn count is handled elsewhere.
+			 固定翼loiter模式判断水平方向是否到达盘旋半径的1.2倍，垂直方向是否到达acceptance radius
 			 */
 			if (dist >= 0.0f && dist <= _navigator->get_acceptance_radius(_mission_item.loiter_radius * 1.2f)
 				&& dist_z <= _navigator->get_altitude_acceptance_radius()) {
@@ -243,6 +247,7 @@ MissionBlock::is_mission_item_reached()
 				}
 			}
 		} else {
+			//此处为对正常航点模式的判断
 			/* for normal mission items used their acceptance radius */
 			float mission_acceptance_radius = _navigator->get_acceptance_radius(_mission_item.acceptance_radius);
 
@@ -264,7 +269,8 @@ MissionBlock::is_mission_item_reached()
 	}
 
 	/* Check if the waypoint and the requested yaw setpoint. */
-
+	//如果为旋翼或者固定翼下需要保证航向，那么对yaw_err及超时时间进行判断，其他模式则直接认为航向已达到预期（不控航向）
+	//其中，如果模式为必须到达航向，且超时仍未达到指定航向，那么直接终止任务
 	if (_waypoint_position_reached && !_waypoint_yaw_reached) {
 
 		if ((_navigator->get_vstatus()->is_rotary_wing
@@ -295,6 +301,8 @@ MissionBlock::is_mission_item_reached()
 	}
 
 	/* Once the waypoint and yaw setpoint have been reached we can start the loiter time countdown */
+	//此函数判断到达航点球体内的持续时间，如果超过1s，则areturn true
+	//针对loiter需要做额外的判定
 	if (_waypoint_position_reached && _waypoint_yaw_reached) {
 
 		if (_time_first_inside_orbit == 0) {

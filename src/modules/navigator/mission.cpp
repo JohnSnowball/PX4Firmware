@@ -182,6 +182,9 @@ Mission::on_active()
 	orb_check(_navigator->get_onboard_mission_sub(), &onboard_updated);
 
 	if (onboard_updated) {
+		//读取航点，将_mission_instance_count++
+		//将_current_onboard_mission_index的值设置为当前航点的index
+		//此值会在set_mission_item -> prepare_mission_item -> read_mission_item函数中使用
 		update_onboard_mission();
 	}
 
@@ -206,11 +209,14 @@ Mission::on_active()
 
 	/* lets check if we reached the current mission item */
 	if (_mission_type != MISSION_TYPE_NONE && is_mission_item_reached()) {
+		//达到航点，更新参数，最后再重置回未达到状态
 		set_mission_item_reached();
 
 		if (_mission_item.autocontinue) {
 			/* switch to next waypoint if 'autocontinue' flag set */
+			//对于WORK_ITEM_TYPE_DEFAULT，将_current_onboard_mission_index递增，如果不为default点，则直接退出
 			advance_mission();
+			//根据新的_current_onboard_mission_index，读取航点并设置任务
 			set_mission_items();
 		}
 
@@ -219,12 +225,14 @@ Mission::on_active()
 
 	} else {
 		/* if waypoint position reached allow loiter on the setpoint */
+		//如果设置了迟滞或者盘旋等，则执行
 		if (_waypoint_position_reached && _mission_item.nav_cmd != NAV_CMD_IDLE) {
 			_navigator->set_can_loiter_at_sp(true);
 		}
 	}
 
 	/* see if we need to update the current yaw heading */
+	//至此，如果已经达到了航点，那么mission item已更新，则根据当前位置与下一个航点的位置更新航向
 	if ((_param_yawmode.get() != MISSION_YAWMODE_NONE
 	     && _param_yawmode.get() < MISSION_YAWMODE_MAX
 	     && _mission_type != MISSION_TYPE_NONE)
@@ -268,8 +276,8 @@ Mission::update_onboard_mission()
 		_navigator->get_mission_result()->valid = true;
 		/* reset mission failure if we have an updated valid mission */
 		_navigator->get_mission_result()->mission_failure = false;
-		_navigator->increment_mission_instance_count();
-		_navigator->set_mission_result_updated();
+		_navigator->increment_mission_instance_count();//_mission_instance_count++
+		_navigator->set_mission_result_updated();//_mission_result_updated = true;
 
 	} else {
 		_onboard_mission.count = 0;
@@ -363,7 +371,8 @@ Mission::get_absolute_altitude_for_item(struct mission_item_s &mission_item)
 		return _mission_item.altitude;
 	}
 }
-//从sd卡中读取航点信息到mission item，再根据不同的飞机状态，航点类型，设置position setpoint, previous/current/next
+//从sd卡中读取航点信息到mission item，
+//再根据飞机的起飞/降落状态，合理的转化航点类型，并设置position setpoint, previous/current/next
 void
 Mission::set_mission_items()
 {
@@ -1050,15 +1059,15 @@ Mission::prepare_mission_items(bool onboard, struct mission_item_s *mission_item
 	bool first_res = false;
 	int offset = 1;
 	//此函数负责从sd卡中读取任务点，一次读一个，读任务点的序号由offset决定
-	//只要能够读取到一个航点，这个函数就能返回true
+	//只要读取到一个航点，这个函数就返回true
 	if (read_mission_item(onboard, 0, mission_item)) {
 
 		first_res = true;
 
 		/* trying to find next position mission item */
+		//读取next的信息，只有当next点包含位置信息的时候，才停止读取航点
 		//例：第一点为takeoff点，offset=0读取，随后出现wp,offset=1,直接break到函数结尾
-		//若next点为trasition/delay等，无位置信息，那么offset++，直到读取到的下一个航点包含位置信息
-		//可以认为，只有当next点包含位置信息的时候，才停止读取航点
+		//若next点为trasition/delay等，无位置信息，那么offset++，读取下一个航点，直到读取到的航点包含位置信息
 		while (read_mission_item(onboard, offset, next_position_mission_item)) {
 
 			if (item_contains_position(next_position_mission_item)) {
@@ -1235,7 +1244,7 @@ Mission::set_mission_item_reached()
 {
 	_navigator->get_mission_result()->reached = true;
 	_navigator->get_mission_result()->seq_reached = _current_offboard_mission_index;
-	_navigator->set_mission_result_updated();
+	_navigator->set_mission_result_updated();//_mission_result_updated = true; 
 	reset_mission_item_reached();
 }
 
