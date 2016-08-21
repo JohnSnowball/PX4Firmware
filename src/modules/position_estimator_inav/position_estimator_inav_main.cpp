@@ -418,7 +418,8 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 			/* poll error */
 			mavlink_log_info(&mavlink_log_pub, "[inav] poll error on init");
 
-		} else if (hrt_absolute_time() - baro_wait_for_sample_time > MAX_WAIT_FOR_BARO_SAMPLE) {
+		}//等待baro传数据，3s之后没有则认为超时
+		else if (hrt_absolute_time() - baro_wait_for_sample_time > MAX_WAIT_FOR_BARO_SAMPLE) {
 			wait_baro = false;
 			mavlink_log_info(&mavlink_log_pub, "[inav] timed out waiting for a baro sample");
 
@@ -431,6 +432,7 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 					baro_wait_for_sample_time = hrt_absolute_time();
 
 					/* mean calculation over several measurements */
+					//读200次，求平均值，得到baro_offset
 					if (baro_init_cnt < baro_init_num) {
 						if (PX4_ISFINITE(sensor.baro_alt_meter)) {
 							baro_offset += sensor.baro_alt_meter;
@@ -487,6 +489,7 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 			orb_check(actuator_sub, &updated);
 
 			if (updated) {
+				//#define ORB_ID_VEHICLE_ATTITUDE_CONTROLS    ORB_ID(actuator_controls_0)
 				orb_copy(ORB_ID_VEHICLE_ATTITUDE_CONTROLS, actuator_sub, &actuator);
 			}
 
@@ -503,14 +506,16 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 			if (updated) {
 				orb_copy(ORB_ID(sensor_combined), sensor_combined_sub, &sensor);
 
+				//timestamp + accelerometer_timestamp_relative = Accelerometer timestamp
 				if (sensor.timestamp + sensor.accelerometer_timestamp_relative != accel_timestamp) {
 					if (att.R_valid) {
 						/* correct accel bias */
-						sensor.accelerometer_m_s2[0] -= acc_bias[0];
+						sensor.accelerometer_m_s2[0] -= acc_bias[0];//将读取的原始值减去加计的bias
 						sensor.accelerometer_m_s2[1] -= acc_bias[1];
 						sensor.accelerometer_m_s2[2] -= acc_bias[2];
 
 						/* transform acceleration vector from body frame to NED frame */
+						//体轴至NED，同时Z方向需要补上一个G,则acc得到的为NED中的动加速度
 						for (int i = 0; i < 3; i++) {
 							acc[i] = 0.0f;
 
@@ -530,6 +535,9 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 				}
 
 				if (sensor.timestamp + sensor.baro_timestamp_relative != baro_timestamp) {
+					//baro_offset为上电后，循环开始前，初始化得到的高度值
+					//sensor.baro_alt_meter为实时读取的baro高度值
+					//z_est为预计值
 					corr_baro = baro_offset - sensor.baro_alt_meter - z_est[0];
 					baro_timestamp = sensor.timestamp + sensor.baro_timestamp_relative;
 					baro_updates++;
@@ -844,6 +852,7 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 				bool reset_est = false;
 
 				/* hysteresis for GPS quality */
+				//判断gps信号质量，负责gps_valid = true/false的转换
 				if (gps_valid) {
 					if (gps.eph > max_eph_epv || gps.epv > max_eph_epv || gps.fix_type < 3) {
 						gps_valid = false;
@@ -851,7 +860,8 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 						warnx("[inav] GPS signal lost");
 					}
 
-				} else {
+				} //初始gps_valid=false，会进入这里判断，rest_est = true
+				else {
 					if (gps.eph < max_eph_epv * 0.7f && gps.epv < max_eph_epv * 0.7f && gps.fix_type >= 3) {
 						gps_valid = true;
 						reset_est = true;
@@ -866,11 +876,14 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 					float alt = gps.alt * 1e-3;
 
 					/* initialize reference position if needed */
+					//第一次循环会进入，初始化x,y速度以及三轴GPS坐标
+					//其中高度为实际高度加z_est[0],此时Z_est应该为0，那么ref_alt的值即为GPS上电时第一次测到的高度值
 					if (!ref_inited) {
 						if (ref_init_start == 0) {
 							ref_init_start = t;
 
-						} else if (t > ref_init_start + ref_init_delay) {
+						} //GPS信号ok，等待一秒钟
+						else if (t > ref_init_start + ref_init_delay) {
 							ref_inited = true;
 
 							/* set position estimate to (0, 0, 0), use GPS velocity for XY */
@@ -892,12 +905,15 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 						}
 					}
 
+
+					//随后的正常循环
 					if (ref_inited) {
 						/* project GPS lat lon to plane */
 						float gps_proj[2];
 						map_projection_project(&ref, lat, lon, &(gps_proj[0]), &(gps_proj[1]));
 
 						/* reset position estimate when GPS becomes good */
+						//当gps_valid之后，reset_est= true，更新x,y方向的速度及位置为GPS数据
 						if (reset_est) {
 							x_est[0] = gps_proj[0];
 							x_est[1] = gps.vel_n_m_s;
