@@ -72,3 +72,9 @@ GTAGS
 # uavcan firmware
 ROMFS/px4fmu_common/uavcan/
 vectorcontrol/
+/px4_github.sln
+/px4_github.VC.db
+/px4_github.vcxproj
+/px4_github.VC.VC.opendb
+/px4_github.vcxproj.user
+/px4_github.vcxproj.filters
