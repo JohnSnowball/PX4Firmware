@@ -420,7 +420,7 @@ MissionBlock::item_contains_position(const struct mission_item_s *item)
 	return true;
 }
 /* 
-非vtol_transition模式下，将mission item的值赋给current setpoint相应的值
+非vtol_transition模式下，将mission item的值复制给对应的current setpoint的值
 在vtol_transition下，current sp的水平坐标为以当前所在位置为原点，保持当前航向，延长1000km的某个点
 current setpoint的高度值为当前转换状态的高度值 
 同时根据nav cmd给 position setpoint type赋值*/

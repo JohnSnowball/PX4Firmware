@@ -402,7 +402,7 @@ Mission::set_mission_items()
 	}
 
 	/* try setting onboard mission item */
-	//检查是否为on_board_mission
+	//检查是否为on_board_mission，并给current和next赋值
 	if (_param_onboard_enabled.get()
 	    && prepare_mission_items(true, &_mission_item, &mission_item_next_position, &has_next_position_item)) {
 
@@ -1051,7 +1051,7 @@ Mission::do_abort_landing()
 	// TODO: reset index to MAV_CMD_DO_LAND_START
 	_current_offboard_mission_index -= 1;
 }
-//prepare函数用来从sd卡中读取航点，current以及next，其中next必定为包含位置信息的点，transition/delay等无法作为next点
+//prepare函数主要用来调用read_mission_item函数，调用两次，用来读取current以及next，其中next必定为包含位置信息的点，transition/delay等无法作为next点
 bool
 Mission::prepare_mission_items(bool onboard, struct mission_item_s *mission_item,
 			       struct mission_item_s *next_position_mission_item, bool *has_next_position_item)
@@ -1067,6 +1067,7 @@ Mission::prepare_mission_items(bool onboard, struct mission_item_s *mission_item
 		/* trying to find next position mission item */
 		//读取next的信息，只有当next点包含位置信息的时候，才停止读取航点
 		//例：第一点为takeoff点，offset=0读取，随后出现wp,offset=1,直接break到函数结尾
+		//到达下一个航点后_current_onboard_mission_index++，使得read_mission_item函数顺序往下读
 		//若next点为trasition/delay等，无位置信息，那么offset++，读取下一个航点，直到读取到的航点包含位置信息
 		while (read_mission_item(onboard, offset, next_position_mission_item)) {
 
@@ -1081,7 +1082,7 @@ Mission::prepare_mission_items(bool onboard, struct mission_item_s *mission_item
 
 	return first_res;
 }
-
+//此函数中的index_to_read由_current_onboard_mission_index决定
 bool
 Mission::read_mission_item(bool onboard, int offset, struct mission_item_s *mission_item)
 {

@@ -608,6 +608,11 @@ Navigator::task_main()
 		}
 
 		/* iterate through navigation modes and set active/inactive for each */
+		/* iterate through navigation modes and set active/inactive for each */
+		//run()函数调用mission/loiter/takeoff等对应的on_active函数，激活相应的功能
+		//例如进入mission->on_active之后，会读取航点并设置相应的position_sp_triplet
+		//若为正常的wp,那么pos_sp_current的值就等于mission_item的值，即下一个航点就为当前的期望点
+		//mission主要的功能就是从sd卡中读取任务点，并将任务点转换为目标航点pos_sp_triplet
 		for (unsigned int i = 0; i < NAVIGATOR_MODE_ARRAY_SIZE; i++) {
 			_navigation_mode_array[i]->run(_navigation_mode == _navigation_mode_array[i]);
 		}
@@ -621,6 +626,7 @@ Navigator::task_main()
 			_pos_sp_triplet_updated = true;
 		}
 
+		//任务点转换为目标航点后，发布出去，再经由pos_control->control_auto来细化，将目标航点分割
 		if (_pos_sp_triplet_updated) {
 			publish_position_setpoint_triplet();
 			_pos_sp_triplet_updated = false;
