@@ -929,15 +929,16 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 						}
 
 						/* calculate correction for position */
-						corr_gps[0][0] = gps_proj[0] - est_buf[est_i][0][0];
-						corr_gps[1][0] = gps_proj[1] - est_buf[est_i][1][0];
-						corr_gps[2][0] = local_pos.ref_alt - alt - est_buf[est_i][2][0];
+						//est_buf[EST_BUF_SIZE][3][2]为一个25*3*2的矩阵列表，包含了25组x,y,z,vx,vy,vz的数据
+						corr_gps[0][0] = gps_proj[0] - est_buf[est_i][0][0];//x
+						corr_gps[1][0] = gps_proj[1] - est_buf[est_i][1][0];//y
+						corr_gps[2][0] = local_pos.ref_alt - alt - est_buf[est_i][2][0];//z
 
 						/* calculate correction for velocity */
 						if (gps.vel_ned_valid) {
-							corr_gps[0][1] = gps.vel_n_m_s - est_buf[est_i][0][1];
-							corr_gps[1][1] = gps.vel_e_m_s - est_buf[est_i][1][1];
-							corr_gps[2][1] = gps.vel_d_m_s - est_buf[est_i][2][1];
+							corr_gps[0][1] = gps.vel_n_m_s - est_buf[est_i][0][1];//vx
+							corr_gps[1][1] = gps.vel_e_m_s - est_buf[est_i][1][1];//vy
+							corr_gps[2][1] = gps.vel_d_m_s - est_buf[est_i][2][1];//vz
 
 						} else {
 							corr_gps[0][1] = 0.0f;
@@ -947,7 +948,8 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 
 						/* save rotation matrix at this moment */
 						memcpy(R_gps, R_buf[est_i], sizeof(R_gps));
-
+						
+						//gps的weight随信号质量变化，满信号的时候等于1，信号差的时候小于1
 						w_gps_xy = min_eph_epv / fmaxf(min_eph_epv, gps.eph);
 						w_gps_z = min_eph_epv / fmaxf(min_eph_epv, gps.epv);
 					}
@@ -1002,6 +1004,7 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 		t_prev = t;
 
 		/* increase EPH/EPV on each step */
+		//？？？？？为毛
 		if (eph < 0.000001f) { //get case where eph is 0 -> would stay 0
 			eph = 0.001;
 		}
@@ -1038,14 +1041,15 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 		/* use LIDAR if it's valid and lidar altitude estimation is enabled */
 		use_lidar = lidar_valid && params.enable_lidar_alt_est;
 
+		//正常情况下为true
 		bool can_estimate_xy = (eph < max_eph_epv) || use_gps_xy || use_flow || use_vision_xy || use_mocap;
 
 		bool dist_bottom_valid = (t < lidar_valid_time + lidar_valid_timeout);
 
-		float w_xy_gps_p = params.w_xy_gps_p * w_gps_xy;
-		float w_xy_gps_v = params.w_xy_gps_v * w_gps_xy;
-		float w_z_gps_p = params.w_z_gps_p * w_gps_z;
-		float w_z_gps_v = params.w_z_gps_v * w_gps_z;
+		float w_xy_gps_p = params.w_xy_gps_p * w_gps_xy;//INAV_W_XY_GPS_P, 1.0f
+		float w_xy_gps_v = params.w_xy_gps_v * w_gps_xy;//INAV_W_XY_GPS_V, 2.0f
+		float w_z_gps_p = params.w_z_gps_p * w_gps_z;//INAV_W_Z_GPS_P, 0.005f
+		float w_z_gps_v = params.w_z_gps_v * w_gps_z;//INAV_W_Z_GPS_V, 0.0f
 
 		float w_xy_vision_p = params.w_xy_vision_p;
 		float w_xy_vision_v = params.w_xy_vision_v;
@@ -1067,6 +1071,9 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 		}
 
 		/* accelerometer bias correction for GPS (use buffered rotation matrix) */
+		//通过GPS修正NED系中的加速度计，修正模式为：
+		// acc_bias_corr -= position*wp*wp + velocity*wv*wv
+
 		float accel_bias_corr[3] = { 0.0f, 0.0f, 0.0f };
 
 		if (use_gps_xy) {
@@ -1082,6 +1089,7 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 		}
 
 		/* transform error vector from NED frame to body frame */
+		//NED系中修正完毕之后再转到体轴
 		for (int i = 0; i < 3; i++) {
 			float c = 0.0f;
 
@@ -1179,6 +1187,7 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 			inertial_filter_correct(corr_lidar, dt, z_est, 0, params.w_z_lidar);
 
 		} else {
+			//对baro
 			inertial_filter_correct(corr_baro, dt, z_est, 0, params.w_z_baro);
 		}
 
@@ -1283,6 +1292,7 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 
 		} else {
 			/* gradually reset xy velocity estimates */
+			//can_estimate_xy = false
 			inertial_filter_correct(-x_est[1], dt, x_est, 1, params.w_xy_res_v);
 			inertial_filter_correct(-y_est[1], dt, y_est, 1, params.w_xy_res_v);
 		}
